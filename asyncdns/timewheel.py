@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 from __future__ import with_statement
 
+import sys
 import time
 import datetime
+import logging
 import threading
 import Queue
 
@@ -31,7 +33,8 @@ class Timer(object):
 
     def cancel(self):
         if self.slot:
-            self.slot.remove(self)
+            with self.slot:
+                self.slot.remove(self)
 
     def call(self):
         try:
@@ -52,26 +55,27 @@ class TimeSlot(object):
         self.lock.release()
 
     def insert(self, timer):
-        with self.lock:
-            timer.slot = self
+        timer.slot = self
 
-            self.timers.append(timer)
+        self.timers.append(timer)
 
     def remove(self, timer):
-        with self.lock:
-            if timer in self.timers:
-                self.timers.remove(timer)
+        if timer in self.timers:
+            self.timers.remove(timer)
+
+            return True
+
+        return False
 
     def check(self):
         fired = []
 
-        with self.lock:
-            for timer in self.timers:
-                timer.expired -= 1
+        for timer in self.timers:
+            timer.expired -= 1
 
-                if timer.expired <= 0:
-                    self.timers.remove(timer)
-                    fired.append(timer)
+            if timer.expired <= 0:
+                self.timers.remove(timer)
+                fired.append(timer)
 
         return fired
 
@@ -108,7 +112,8 @@ class TimeWheel(object):
     def create(self, callback, expired):
         timer = Timer(self, callback, expired)
 
-        self.slots[timer.expired % len(self.slots)].insert(timer)
+        with self.slots[timer.expired % len(self.slots)] as slot:
+            slot.insert(timer)
 
         return timer
 
