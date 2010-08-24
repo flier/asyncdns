@@ -11,10 +11,14 @@ import Queue
 class Timer(object):
     logger = logging.getLogger("asyncdns.timer")
 
-    def __init__(self, callback, expired):
+    def __init__(self, callback, expired, name=None):
         self.slot = None
         self.callback = callback
         self.expired = self.normalize(expired)
+        self.name = name
+
+    def __repr__(self):
+        return "<Timer %s expired in %d seconds>" % (self.name or "#%d" % id(self), self.expired)
 
     @staticmethod
     def normalize(expired):

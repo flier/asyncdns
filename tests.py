@@ -12,13 +12,15 @@ from asyncdns.timewheel import *
 
 class TestTimeWheel(unittest.TestCase):
     def testTimer(self):
-       self.assertEquals(10, Timer.normalize(10))
-       self.assertEquals(10, Timer.normalize(10.0))
+        self.assertEquals(10, Timer.normalize(10))
+        self.assertEquals(10, Timer.normalize(10.0))
 
-       self.assertEquals(10, Timer.normalize(time.time()+10))
+        self.assertEquals(10, Timer.normalize(time.time()+10))
 
-       self.assertEquals(10, Timer.normalize(datetime.timedelta(seconds=10)))
-       self.assertEquals(10, Timer.normalize(datetime.datetime.now() + datetime.timedelta(seconds=10)))
+        self.assertEquals(10, Timer.normalize(datetime.timedelta(seconds=10)))
+        self.assertEquals(10, Timer.normalize(datetime.datetime.now() + datetime.timedelta(seconds=10)))
+
+        self.assertEquals("<Timer test expired in 10 seconds>", repr(Timer(None, 10, 'test')))
 
     def testSlot(self):
         with TimeSlot() as slot:
