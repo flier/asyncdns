@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Komodo Project File - DO NOT EDIT -->
+<project id="287dff37-12d9-410c-83e3-2bab3db928b9" kpf_version="4" name="asyncdns.kpf">
+<preference-set idref="287dff37-12d9-410c-83e3-2bab3db928b9">
+  <boolean id="import_live">1</boolean>
+</preference-set>
+</project>
