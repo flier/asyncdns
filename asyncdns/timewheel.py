@@ -54,6 +54,12 @@ class TimeSlot(object):
     def __exit__(self, exc_type, exc_value, traceback):
         self.lock.release()
 
+    def __len__(self):
+        return len(self.timers)
+
+    def __contains__(self, timer):
+        return timer in self.timers
+
     def insert(self, timer):
         timer.slot = self
 
@@ -110,24 +116,27 @@ class TimeWheel(object):
             self.task_pool = []
 
     def create(self, callback, expired):
-        timer = Timer(self, callback, expired)
+        timer = Timer(callback, expired)
 
-        with self.slots[timer.expired % len(self.slots)] as slot:
+        with self.slots[int(time.time() + timer.expired) % len(self.slots)] as slot:
             slot.insert(timer)
 
         return timer
 
-    def check(self, ts):
-        with self.slots[Timer.normalize(ts) % len(self.slots)] as slot:
+    def check(self, ts=None):
+        with self.slots[int(ts or time.time()) % len(self.slots)] as slot:
             return slot.check()
 
     def terminate(self):
         self.terminated = True
 
+    def isTerminated(self):
+        return self.terminated.isSet()
+
     def run(self):
         latest = int(time.time())
 
-        while not self.terminated.isSet():
+        while not self.isTerminated():
             self.terminated.wait(1)
 
             timers = []
