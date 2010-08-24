@@ -65,7 +65,24 @@ class TestTimeWheel(unittest.TestCase):
         self.assertEquals([timer], wheel.check(expired))
 
     def testDispatcher(self):
-        pass
+        wheel = TimeWheel(task_pool_size=1)
+        wheel.start()
+
+        fired = threading.Event()
+
+        self.assertFalse(fired.isSet())
+
+        def callback():
+            fired.set()
+
+        timer = wheel.create(callback, 1)
+
+        self.assertEquals(1, len(wheel))
+
+        fired.wait(2)
+
+        self.assert_(fired.isSet())
+        self.assertEquals(0, len(wheel))
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

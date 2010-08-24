@@ -85,18 +85,18 @@ class TimeSlot(object):
 
         return fired
 
-class TimeWheel(object):
+class TimeWheel(threading.Thread):
     logger = logging.getLogger("asyncdns.timewheel")
 
     class Dispatcher(threading.Thread):
         def __init__(self, terminated, task_queue):
             threading.Thread.__init__(self, name="asyncdns.dispatcher")
 
-            self.setDaemon(True)
-            self.start()
-
             self.terminated = terminated
             self.task_queue = task_queue
+
+            self.setDaemon(True)
+            self.start()
 
         def run(self):
             while not self.terminated.isSet():
@@ -104,16 +104,18 @@ class TimeWheel(object):
                 timer.call()
                 self.task_queue.task_done()
 
-    def __init__(self, slots=360, task_pool_size=None):
+    def __init__(self, task_pool_size=0, slots=360):
+        threading.Thread.__init__(self, name="asyncdns.timewheel")
+
         self.slots = [TimeSlot() for i in range(slots)]
         self.terminated = threading.Event()
+        self.task_queue = Queue.Queue() if task_pool_size else None
+        self.task_pool_size = task_pool_size
 
-        if task_pool_size:
-            self.task_queue = Queue.Queue()
-            self.task_pool = [Dispatcher(self.terminated, self.task_queue) for i in task_pool_size]
-        else:
-            self.task_queue = None
-            self.task_pool = []
+        self.setDaemon(True)
+
+    def __len__(self):
+        return sum([len(slot) for slot in self.slots])
 
     def create(self, callback, expired):
         timer = Timer(callback, expired)
@@ -128,7 +130,7 @@ class TimeWheel(object):
             return slot.check()
 
     def terminate(self):
-        self.terminated = True
+        self.terminated.set()
 
     def isTerminated(self):
         return self.terminated.isSet()
@@ -136,13 +138,19 @@ class TimeWheel(object):
     def run(self):
         latest = int(time.time())
 
+        self.task_pool = [TimeWheel.Dispatcher(self.terminated, self.task_queue) for i in range(self.task_pool_size)]
+
         while not self.isTerminated():
             self.terminated.wait(1)
 
             timers = []
 
-            for ts in range(latest, int(time.time())):
+            current = int(time.time())
+
+            for ts in range(latest, current):
                 timers.extend(self.check(ts))
+
+            latest = current
 
             for timer in timers:
                 if self.task_queue:
