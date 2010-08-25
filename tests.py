@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import with_statement
 
+import threading
 import logging
 import unittest
 
@@ -103,12 +104,37 @@ class TestPipeline(unittest.TestCase):
 
     def testLifecycle(self):
         self.assertFalse(self.pipeline.isTerminated())
+
+        finished = {}
+
+        for nameserver in self.pipeline.system_nameservers:
+            finished[nameserver] = threading.Event()
+
+        def onfinish(nameserver, response):
+            self.assertEqual(dns.rcode.NOERROR, response.rcode())
+            self.assertEqual(dns.opcode.QUERY, response.opcode())
+            self.assert_(len(response.answer) > 0)
+            finished[nameserver[0]].set()
+
+        self.pipeline.query("www.baidu.com.", callback=onfinish, expired=5)
+
+        self.assertEquals(len(finished), len(self.pipeline))
+        self.assertEquals(len(finished), self.pipeline.queued)
+        self.assertEquals(0, self.pipeline.pending)
+
+        [lock.wait(5) for lock in finished.values()]
+
         self.assertEquals(0, len(self.pipeline))
 
-        r = self.pipeline.query("www.google.com.", expired=5)
+        self.assertEquals(0, len(self.pipeline))
 
-        self.assertEqual(dns.rcode.NOERROR, r.rcode())
-        self.assertEqual(dns.opcode.QUERY, r.opcode())
+        nameserver, response = self.pipeline.query("www.google.com.", expired=5)
+
+        self.assertEqual(dns.rcode.NOERROR, response.rcode())
+        self.assertEqual(dns.opcode.QUERY, response.opcode())
+        self.assert_(len(response.answer) > 0)
+
+        self.assertEquals(1, len(self.pipeline))
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

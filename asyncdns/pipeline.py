@@ -45,6 +45,10 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
     def pending(self):
         return sum([len(tasks) for tasks in self.pending_tasks.values()])
 
+    @property
+    def system_nameservers(self):
+        return dns.resolver.get_default_resolver().nameservers
+
     def isTerminated(self):
         return self.terminated.isSet()
 
@@ -118,7 +122,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             rdclass = dns.rdataclass.from_text(rdclass)
 
         if nameservers is None:
-            nameservers = dns.resolver.get_default_resolver().nameservers
+            nameservers = self.system_nameservers
 
         self.logger.info("query name servers %s for type %s and class %s record of domain %s in %d seconds",
                          ', '.join(nameservers),
@@ -134,7 +138,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
         def collect_result(nameserver, response):
             with results_lock:
-                results.append(response)
+                results.append((nameserver, response))
 
                 if not isinstance(response, Exception) or \
                    len(results) == len(nameservers):
@@ -146,11 +150,11 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         if callback is None:
             found.wait(expired)
 
-            for result in results:
+            for nameserver, result in results:
                 if not isinstance(result, Exception):
-                    return result
+                    return nameserver, result
 
-            raise results.pop()
+            raise results.pop()[1]
 
     def run(self):
         try:
