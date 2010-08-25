@@ -32,6 +32,22 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
         self.wheel = wheel
 
+        self.setDaemon(True)
+
+    def __len__(self):
+        return self.queued + self.pending
+
+    @property
+    def queued(self):
+        return self.task_queue.qsize()
+
+    @property
+    def pending(self):
+        return sum([len(tasks) for tasks in self.pending_tasks.values()])
+
+    def isTerminated(self):
+        return self.terminated.isSet()
+
     def handle_connect(self):
         pass
 
@@ -50,15 +66,20 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             for request in tasks.keys():
                 if request.is_response(response):
                     callback, timer = tasks[request]
+                    del tasks[request]
 
-        timer.cancel()
-        callback(nameserver, response)
+        if callback and timer:
+            timer.cancel()
+            callback(nameserver, response)
+        else:
+            self.logger.warn("drop unknown response from %s" % nameserver)
 
     def writable(self):
         return not self.task_queue.empty()
 
     def handle_write(self):
         request, expired, callback, nameserver = self.task_queue.get_nowait()
+
         try:
             packet = request.to_wire()
 
@@ -107,14 +128,33 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
         request = dns.message.make_query(qname, rdtype, rdclass)
 
+        found = None if callback else threading.Event()
+        results_lock = threading.Lock()
+        results = []
+
+        def collect_result(nameserver, response):
+            with results_lock:
+                results.append(response)
+
+                if not isinstance(response, Exception) or \
+                   len(results) == len(nameservers):
+                    found.set()
+
         for nameserver in nameservers:
-            self.task_queue.put_nowait((request, expired, callback, (nameserver, port)))
+            self.task_queue.put_nowait((request, expired, callback or collect_result, (nameserver, port)))
+
+        if callback is None:
+            found.wait(expired)
+
+            for result in results:
+                if not isinstance(result, Exception):
+                    return result
+
+            raise results.pop()
 
     def run(self):
         try:
-            asyncore.loop()
-        except KeyboardInterrupt:
-            pass
+            asyncore.loop(timeout=1, use_poll=True)
         except Exception, e:
             self.logger.warn("fail to run asyncdns pipeline, %s", e)
 
