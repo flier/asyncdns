@@ -15,10 +15,12 @@ import dns.rdataclass
 import dns.message
 import dns.resolver
 
+from timewheel import TimeWheel
+
 class Pipeline(asyncore.dispatcher, threading.Thread):
     logger = logging.getLogger("asyncdns.pipeline")
 
-    def __init__(self, wheel, start=True):
+    def __init__(self, wheel=None, start=True):
         asyncore.dispatcher.__init__(self)
         threading.Thread.__init__(self, name="asyncdns.pipeline")
 
@@ -30,7 +32,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.pending_tasks_lock = threading.Lock()
         self.pending_tasks = {}
 
-        self.wheel = wheel
+        self.wheel = wheel or TimeWheel()
 
         self.setDaemon(True)
 
@@ -169,12 +171,10 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             self.logger.warn("fail to run asyncdns pipeline, %s", e)
 
 if __name__=='__main__':
-    from timewheel import TimeWheel
-
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,
                         format='%(asctime)s %(levelname)s %(message)s')
 
-    pipeline = Pipeline(TimeWheel())
+    pipeline = Pipeline()
 
     def dump(nameserver, response):
         print nameserver, response
