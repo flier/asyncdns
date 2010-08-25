@@ -7,8 +7,11 @@ import unittest
 import time
 import datetime
 
-import asyncdns
+import dns.rcode
+import dns.opcode
+
 from asyncdns.timewheel import *
+from asyncdns.pipeline import *
 
 class TestTimeWheel(unittest.TestCase):
     def testTimer(self):
@@ -81,10 +84,31 @@ class TestTimeWheel(unittest.TestCase):
 
         self.assertEquals(1, len(wheel))
 
-        fired.wait(2)
+        fired.wait(5)
 
         self.assert_(fired.isSet())
         self.assertEquals(0, len(wheel))
+
+class TestPipeline(unittest.TestCase):
+    def setUp(self):
+        self.wheel = TimeWheel()
+        self.wheel.start()
+
+        self.pipeline = Pipeline(self.wheel)
+        self.pipeline.start()
+
+    def tearDown(self):
+        self.pipeline.close()
+        self.wheel.terminate()
+
+    def testLifecycle(self):
+        self.assertFalse(self.pipeline.isTerminated())
+        self.assertEquals(0, len(self.pipeline))
+
+        r = self.pipeline.query("www.google.com.", expired=5)
+
+        self.assertEqual(dns.rcode.NOERROR, r.rcode())
+        self.assertEqual(dns.opcode.QUERY, r.opcode())
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

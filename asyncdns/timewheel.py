@@ -147,6 +147,9 @@ class TimeWheel(threading.Thread):
         while not self.isTerminated():
             self.terminated.wait(1)
 
+            if time is None or self.isTerminated():
+                break
+
             timers = []
 
             current = int(time.time())
