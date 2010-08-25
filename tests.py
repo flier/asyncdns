@@ -72,7 +72,6 @@ class TestTimeWheel(unittest.TestCase):
 
     def testDispatcher(self):
         wheel = TimeWheel(task_pool_size=1)
-        wheel.start()
 
         fired = threading.Event()
 
@@ -93,10 +92,7 @@ class TestTimeWheel(unittest.TestCase):
 class TestPipeline(unittest.TestCase):
     def setUp(self):
         self.wheel = TimeWheel()
-        self.wheel.start()
-
         self.pipeline = Pipeline(self.wheel)
-        self.pipeline.start()
 
     def tearDown(self):
         self.pipeline.close()
@@ -134,7 +130,7 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(dns.opcode.QUERY, response.opcode())
         self.assert_(len(response.answer) > 0)
 
-        self.assertEquals(1, len(self.pipeline))
+        self.assert_(len(self.pipeline) < len(self.pipeline.system_nameservers))
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

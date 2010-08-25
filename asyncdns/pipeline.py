@@ -18,7 +18,7 @@ import dns.resolver
 class Pipeline(asyncore.dispatcher, threading.Thread):
     logger = logging.getLogger("asyncdns.pipeline")
 
-    def __init__(self, wheel):
+    def __init__(self, wheel, start=True):
         asyncore.dispatcher.__init__(self)
         threading.Thread.__init__(self, name="asyncdns.pipeline")
 
@@ -33,6 +33,9 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.wheel = wheel
 
         self.setDaemon(True)
+
+        if start:
+            self.start()
 
     def __len__(self):
         return self.queued + self.pending
@@ -121,6 +124,9 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         if isinstance(rdclass, str):
             rdclass = dns.rdataclass.from_text(rdclass)
 
+        if not qname.is_absolute():
+            qname = qname.concatenate(dns.name.root)
+
         if nameservers is None:
             nameservers = self.system_nameservers
 
@@ -177,5 +183,4 @@ if __name__=='__main__':
         if domain[0] != '-':
             pipeline.query(domain, callback=dump)
 
-    pipeline.start()
     pipeline.join()

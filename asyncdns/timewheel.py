@@ -108,7 +108,7 @@ class TimeWheel(threading.Thread):
                 timer.call()
                 self.task_queue.task_done()
 
-    def __init__(self, task_pool_size=0, slots=360):
+    def __init__(self, task_pool_size=0, slots=360, start=True):
         threading.Thread.__init__(self, name="asyncdns.timewheel")
 
         self.slots = [TimeSlot() for i in range(slots)]
@@ -117,6 +117,9 @@ class TimeWheel(threading.Thread):
         self.task_pool_size = task_pool_size
 
         self.setDaemon(True)
+
+        if start:
+            self.start()
 
     def __len__(self):
         return sum([len(slot) for slot in self.slots])
