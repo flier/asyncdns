@@ -165,10 +165,6 @@ class TimeWheel(threading.Thread):
             for ts in range(latest, current):
                 timers.extend(self.check(ts))
 
-            self.logger.debug("found %d/%d expired timers in [%s, %s]",
-                              len(timers), len(timers)+len(self),
-                              time.ctime(latest), time.ctime(current))
-
             latest = current
 
             for timer in timers:

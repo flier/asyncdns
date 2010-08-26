@@ -112,9 +112,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 with self.pending_tasks_lock:
                     tasks = self.pending_tasks.setdefault(nameserver, {})
 
-                    def timeout():
-                        self.logger.warn("query to nameserver %s expired: %s", nameserver, request)
-                        
+                    def timeout():                        
                         del tasks[request]
 
                         try:
