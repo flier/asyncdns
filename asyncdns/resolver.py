@@ -14,41 +14,44 @@ class Resolver(Pipeline):
     def __init__(self, wheel=None, start=True):
         Pipeline.__init__(self, wheel, start)
 
+    @staticmethod
+    def _extract_value(rrset):
+        if rrset.rdtype in [dns.rdatatype.A, dns.rdatatype.AAAA]:
+            return [rdata.address for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.MX]:
+            return [(str(rdata.exchange), rdata.preference) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.NS, dns.rdatatype.CNAME, dns.rdatatype.PTR]:
+            return [str(rdata.target) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.SOA]:
+            return [(str(rdata.mname), str(rdata.rname),
+                     rdata.serial, rdata.refresh,
+                     rdata.retry, rdata.expire,
+                     rdata.minimum) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.WKS]:
+            return [(rdata.address, rdata.protocol, rdata.bitmap) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.SRV]:
+            return [(str(rdata.target), rdata.port,
+                     rdata.priority, rdata.weight) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.HINFO]:
+            return [(rdata.cpu, rdata.os) for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.TXT]:
+            return [rdata.strings for rdata in rrset]
+        elif rrset.rdtype in [dns.rdatatype.RP]:
+            return [(rdata.mbox, rdata.txt) for rdata in rrset]
+        else:
+            return [rdata for rdata in rrset]
+
     def lookup(self, qname, rdtype, rdclass, expired=30,
                callback=None, nameservers=None, port=53):
-        results = []
+        results = {}
         finished = threading.Event()
 
         def onfinish(nameserver, response):
             if not isinstance(response, Exception):
                 for rrset in response.answer:
-                    if rdtype == dns.rdatatype.ANY and rrset.rdclass == rdclass:
-                        results.extend([rdata for rdata in rrset])
-                    elif rrset.rdtype == rdtype and rrset.rdclass == rdclass:
-                        if rdtype in [dns.rdatatype.A, dns.rdatatype.AAAA]:
-                            results.extend([rdata.address for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.MX]:
-                            results.extend([(rdata.exchange, rdata.preference) for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.NS, dns.rdatatype.CNAME, dns.rdatatype.PTR]:
-                            results.extend([rdata.target for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.SOA]:
-                            results.extend([(rdata.mname, rdata.rname,
-                                             rdata.serial, rdata.refresh,
-                                             rdata.retry, rdata.expire,
-                                             rdata.minimum) for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.WKS]:
-                            results.extend([(rdata.address, rdata.protocol, rdata.bitmap) for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.SRV]:
-                            results.extend([(rdata.target, rdata.port,
-                                             rdata.priority, rdata.weight) for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.HINFO]:
-                            results.extend([(rdata.cpu, rdata.os) for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.TXT]:
-                            results.extend([rdata.strings for rdata in rrset])
-                        elif rdtype in [dns.rdatatype.RP]:
-                            results.extend([(rdata.mbox, rdata.txt) for rdata in rrset])
-                        else:
-                            results.extend([rdata for rdata in rrset])
+                    rdtypename = dns.rdatatype.to_text(rrset.rdtype)
+
+                    results.setdefault(rdtypename, []).extend(Resolver._extract_value(rrset))
 
                 if callback:
                     try:
