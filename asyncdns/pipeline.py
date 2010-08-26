@@ -64,7 +64,14 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.close()
 
     def handle_read(self):
-        packet, nameserver = self.recvfrom(65535)
+        try:
+            packet, nameserver = self.recvfrom(65535)
+        except socket.error, why:
+            if why[0] in [EWOULDBLOCK, EAGAIN]:
+                return
+            else:
+                raise
+
         response = dns.message.from_wire(packet)
 
         callback = None
