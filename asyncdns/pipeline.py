@@ -82,28 +82,23 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             
             return
 
-        callback = None
-
         with self.pending_tasks_lock:
             tasks = self.pending_tasks[nameserver]
 
             for request in tasks.keys():
                 if request.is_response(response):
                     callback, timer = tasks[request]
+                    
                     del tasks[request]
+                    
+                    timer.cancel()
 
-        if callback and timer:
-            timer.cancel()
-            
-            try:
-                callback(nameserver, response)
-            except Exception, e:
-                self.logger.warn("fail to execute callback: %s", e)
-                self.logger.debug("exc: %s", traceback.format_exc())
-                self.logger.debug("res: %s", response)
-            
-        else:
-            self.logger.warn("drop unknown response from %s", nameserver)
+                    try:
+                        callback(nameserver, response)
+                    except Exception, e:
+                        self.logger.warn("fail to execute callback: %s", e)
+                        self.logger.debug("exc: %s", traceback.format_exc())
+                        self.logger.debug("res: %s", response)            
 
     def writable(self):
         return not self.task_queue.empty()
