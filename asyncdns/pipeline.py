@@ -142,7 +142,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
     def recvfrom(self, bufize):
         try:
-            return self.recvfrom(65535)
+            return self.socket.recvfrom(65535)
         except socket.error, why:
             if why[0] in [EWOULDBLOCK, EAGAIN]:
                 return None, None
