@@ -86,7 +86,12 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
         if callback and timer:
             timer.cancel()
-            callback(nameserver, response)
+            
+            try:
+                callback(nameserver, response)
+            except Exception, e:
+                self.logger.warn("fail to execute callback: %s", e)
+            
         else:
             self.logger.warn("drop unknown response from %s", nameserver)
 

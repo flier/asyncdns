@@ -57,7 +57,7 @@ class Resolver(Pipeline):
                     try:
                         callback(qname, results)
                     except Exception, e:
-                        self.logger.warn("fail to execute callback: %s", e)
+                        self.logger.warn("fail to execute callback for domain %s: %s", qname, e)
 
             finished.set()
 
