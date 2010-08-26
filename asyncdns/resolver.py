@@ -51,7 +51,10 @@ class Resolver(Pipeline):
                             results.extend([rdata for rdata in rrset])
 
                 if callback:
-                    callback(qname, results)
+                    try:
+                        callback(qname, results)
+                    except Exception, e:
+                        self.logger.warn("fail to execute callback: %s", e)
 
             finished.set()
 

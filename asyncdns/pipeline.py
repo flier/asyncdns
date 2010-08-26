@@ -81,7 +81,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             timer.cancel()
             callback(nameserver, response)
         else:
-            self.logger.warn("drop unknown response from %s" % nameserver)
+            self.logger.warn("drop unknown response from %s", nameserver)
 
     def writable(self):
         return not self.task_queue.empty()
