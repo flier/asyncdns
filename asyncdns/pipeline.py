@@ -123,7 +123,12 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                         
                         del tasks[request]
 
-                        callback(nameserver, socket.timeout())
+                        try:
+                            callback(nameserver, socket.timeout())
+                        except Exception, e:
+                            self.logger.warn("fail to execute callback: %s", e)
+                            self.logger.debug("exc: %s", traceback.format_exc())
+                            self.logger.debug("res: %s", request)                            
 
                     timer = self.wheel.create(timeout, expired)
 
