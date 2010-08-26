@@ -4,6 +4,7 @@ from __future__ import with_statement
 import sys
 import logging
 import socket
+from errno import *
 import asyncore
 import threading
 
@@ -67,38 +68,33 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.close()
 
     def handle_read(self):
-        try:
-            packet, nameserver = self.recvfrom(65535)
-        except socket.error, why:
-            if why[0] in [EWOULDBLOCK, EAGAIN]:
+        packet, nameserver = self.recvfrom(65535)
+        
+        if packet:
+            try:
+                response = dns.message.from_wire(packet)
+            except dns.exception.FormError:
+                self.logger.warn("drop invalid DNS packet")
+                
                 return
-            else:
-                raise
-
-        try:
-            response = dns.message.from_wire(packet)
-        except dns.exception.FormError:
-            self.logger.warn("drop invalid DNS packet")
-            
-            return
-
-        with self.pending_tasks_lock:
-            tasks = self.pending_tasks[nameserver]
-
-            for request in tasks.keys():
-                if request.is_response(response):
-                    callback, timer = tasks[request]
-                    
-                    del tasks[request]
-                    
-                    timer.cancel()
-
-                    try:
-                        callback(nameserver, response)
-                    except Exception, e:
-                        self.logger.warn("fail to execute callback: %s", e)
-                        self.logger.debug("exc: %s", traceback.format_exc())
-                        self.logger.debug("res: %s", response)            
+    
+            with self.pending_tasks_lock:
+                tasks = self.pending_tasks[nameserver]
+    
+                for request in tasks.keys():
+                    if request.is_response(response):
+                        callback, timer = tasks[request]
+                        
+                        del tasks[request]
+                        
+                        timer.cancel()
+    
+                        try:
+                            callback(nameserver, response)
+                        except Exception, e:
+                            self.logger.warn("fail to execute callback: %s", e)
+                            self.logger.debug("exc: %s", traceback.format_exc())
+                            self.logger.debug("res: %s", response)            
 
     def writable(self):
         return not self.task_queue.empty()
@@ -138,9 +134,23 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             if why[0] == EWOULDBLOCK:
                 return 0
             else:
+                self.logger.warn("fail to send packet, %s", why)
+                
                 raise
+            
             return 0
 
+    def recvfrom(self, bufize):
+        try:
+            return self.recvfrom(65535)
+        except socket.error, why:
+            if why[0] in [EWOULDBLOCK, EAGAIN]:
+                return None, None
+            else:
+                self.logger.warn("fail to receive packet, %s", why)
+                
+                raise
+            
     def query(self, qname, rdtype=dns.rdatatype.A, rdclass=dns.rdataclass.IN,
               expired=30, callback=None, nameservers=None, port=53):
         if isinstance(qname, (str, unicode)):
