@@ -3,6 +3,8 @@ import sys
 import logging
 import threading
 
+import traceback
+
 import dns.rdatatype
 import dns.rdataclass
 
@@ -44,7 +46,7 @@ class Resolver(Pipeline):
     def lookup(self, qname, rdtype, rdclass, expired=30,
                callback=None, nameservers=None, port=53):
         results = {}
-        finished = threading.Event()
+        finished = None if callback else threading.Event()
 
         def onfinish(nameserver, response):
             if not isinstance(response, Exception):
@@ -58,8 +60,14 @@ class Resolver(Pipeline):
                         callback(qname, results)
                     except Exception, e:
                         self.logger.warn("fail to execute callback for domain %s: %s", qname, e)
+                        self.logger.debug("exc: %s", traceback.format_exc())
+                        self.logger.debug("res: %s", response)
+            else:
+                if callback:
+                    callback(qname, response)
 
-            finished.set()
+            if finished:
+                finished.set()
 
         self.query(qname, rdtype, rdclass, expired, onfinish, nameservers, port)
 

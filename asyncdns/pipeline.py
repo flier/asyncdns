@@ -7,6 +7,8 @@ import socket
 import asyncore
 import threading
 
+import traceback
+
 import Queue
 
 import dns.name
@@ -14,6 +16,7 @@ import dns.rdatatype
 import dns.rdataclass
 import dns.message
 import dns.resolver
+import dns.exception
 
 from timewheel import TimeWheel
 
@@ -72,7 +75,12 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             else:
                 raise
 
-        response = dns.message.from_wire(packet)
+        try:
+            response = dns.message.from_wire(packet)
+        except dns.exception.FormError:
+            self.logger.warn("drop invalid DNS packet")
+            
+            return
 
         callback = None
 
@@ -91,6 +99,8 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 callback(nameserver, response)
             except Exception, e:
                 self.logger.warn("fail to execute callback: %s", e)
+                self.logger.debug("exc: %s", traceback.format_exc())
+                self.logger.debug("res: %s", response)
             
         else:
             self.logger.warn("drop unknown response from %s", nameserver)
@@ -109,6 +119,8 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                     tasks = self.pending_tasks.setdefault(nameserver, {})
 
                     def timeout():
+                        self.logger.warn("query to nameserver %s expired: %s", nameserver, request)
+                        
                         del tasks[request]
 
                         callback(nameserver, socket.timeout())
@@ -117,7 +129,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
                     tasks[request] = (callback, timer)
         except Exception, e:
-            self.logger.warn("fail to send query, %s", e)
+            self.logger.warn("fail to send query, %s", e)            
 
     def sendto(self, data, address):
         try:
