@@ -36,7 +36,10 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.pending_tasks_lock = threading.Lock()
         self.pending_tasks = {}
 
-        self.wheel = wheel or TimeWheel()
+        self.wheel = wheel
+        
+        if self.wheel is None:
+            self.wheel = TimeWheel()
 
         self.setDaemon(True)
 

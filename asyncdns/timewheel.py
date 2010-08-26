@@ -8,32 +8,21 @@ import logging
 import threading
 import Queue
 
+# Hashed and Hierarchical Timing Wheels: Efficient Data Structures for Implementing a Timer Facility (1996)
+#
+# http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.33.1519
+
 class Timer(object):
     logger = logging.getLogger("asyncdns.timer")
 
     def __init__(self, callback, expired, name=None):
         self.slot = None
         self.callback = callback
-        self.expired = self.normalize(expired)
+        self.expired = expired
         self.name = name
 
     def __repr__(self):
         return "<Timer %s expired in %d seconds>" % (self.name or "#%d" % id(self), self.expired)
-
-    @staticmethod
-    def normalize(expired):
-        if isinstance(expired, datetime.datetime):
-            expired = time.mktime(expired.timetuple())
-        elif isinstance(expired, datetime.timedelta):
-            expired = time.mktime((datetime.datetime.now() + expired).timetuple())
-
-        expired = int(expired)
-        now = int(time.time())
-
-        if expired > now:
-            expired -= now
-
-        return expired
 
     def cancel(self):
         if self.slot:
@@ -45,6 +34,21 @@ class Timer(object):
             self.callback()
         except Exception, e:
             self.logger.warn("fail to execute timer callback, %s", e)
+
+    @staticmethod
+    def normalize(expired):
+        if isinstance(expired, datetime.datetime):
+            expired = time.mktime(expired.timetuple())
+        elif isinstance(expired, datetime.timedelta):
+            expired = time.mktime((datetime.datetime.now() + expired).timetuple())
+    
+        expired = int(expired)
+        now = int(time.time())
+    
+        if expired > now:
+            expired -= now
+    
+        return expired
 
 class TimeSlot(object):
     def __init__(self):
@@ -83,7 +87,7 @@ class TimeSlot(object):
         for timer in self.timers:
             timer.expired -= 1
 
-            if timer.expired <= 0:
+            if timer.expired < 0:
                 self.timers.remove(timer)
                 fired.append(timer)
 
@@ -125,9 +129,10 @@ class TimeWheel(threading.Thread):
         return sum([len(slot) for slot in self.slots])
 
     def create(self, callback, expired):
-        timer = Timer(callback, expired)
+        expired = Timer.normalize(expired)        
+        timer = Timer(callback, expired/len(self.slots))
 
-        with self.slots[int(time.time() + timer.expired) % len(self.slots)] as slot:
+        with self.slots[int(time.time() + expired) % len(self.slots)] as slot:
             slot.insert(timer)
 
         return timer

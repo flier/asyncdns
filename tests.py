@@ -46,7 +46,7 @@ class TestTimeWheel(unittest.TestCase):
 
             slot.insert(timer)
 
-            for i in range(9):
+            for i in range(10):
                 self.assertEquals([], slot.check())
 
             self.assertEquals([timer], slot.check())
@@ -57,17 +57,15 @@ class TestTimeWheel(unittest.TestCase):
 
         self.assertFalse(wheel.isTerminated())
 
-        timer = wheel.create(None, 10)
+        timer = wheel.create(None, len(wheel.slots)+10)
 
-        self.assertEquals(10, timer.expired)
+        self.assertEquals(1, timer.expired)
 
-        expired = int(time.time()+timer.expired)
+        expired = int(time.time()+10)
 
         self.assert_(timer in wheel.slots[expired%len(wheel.slots)])
 
-        for i in range(9):
-            self.assertEquals([], wheel.check(expired))
-
+        self.assertEquals([], wheel.check(expired))
         self.assertEquals([timer], wheel.check(expired))
 
     def testDispatcher(self):
