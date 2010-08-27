@@ -101,7 +101,9 @@ class TestPipeline(unittest.TestCase):
 
         finished = {}
 
-        for nameserver in self.pipeline.system_nameservers:
+        system_nameservers = self.pipeline.system_nameservers()
+
+        for nameserver in system_nameservers:
             finished[nameserver] = threading.Event()
 
         def onfinish(nameserver, response):
@@ -128,7 +130,7 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(dns.opcode.QUERY, response.opcode())
         self.assert_(len(response.answer) > 0)
 
-        self.assert_(len(self.pipeline) < len(self.pipeline.system_nameservers))
+        self.assert_(len(self.pipeline) < len(system_nameservers))
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

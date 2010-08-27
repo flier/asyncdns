@@ -37,7 +37,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.pending_tasks = {}
 
         self.wheel = wheel
-        
+
         if self.wheel is None:
             self.wheel = TimeWheel()
 
@@ -57,8 +57,8 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
     def pending(self):
         return sum([len(tasks) for tasks in self.pending_tasks.values()])
 
-    @property
-    def system_nameservers(self):
+    @staticmethod
+    def system_nameservers():
         return dns.resolver.get_default_resolver().nameservers
 
     def isTerminated(self):
@@ -72,32 +72,32 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
 
     def handle_read(self):
         packet, nameserver = self.recvfrom(65535)
-        
+
         if packet:
             try:
                 response = dns.message.from_wire(packet)
             except dns.exception.FormError:
                 self.logger.warn("drop invalid DNS packet")
-                
+
                 return
-    
+
             with self.pending_tasks_lock:
                 tasks = self.pending_tasks[nameserver]
-    
+
                 for request in tasks.keys():
                     if request.is_response(response):
                         callback, timer = tasks[request]
-                        
+
                         del tasks[request]
-                        
+
                         timer.cancel()
-    
+
                         try:
                             callback(nameserver, response)
                         except Exception, e:
                             self.logger.warn("fail to execute callback: %s", e)
                             self.logger.debug("exc: %s", traceback.format_exc())
-                            self.logger.debug("res: %s", response)            
+                            self.logger.debug("res: %s", response)
 
     def writable(self):
         return not self.task_queue.empty()
@@ -112,7 +112,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 with self.pending_tasks_lock:
                     tasks = self.pending_tasks.setdefault(nameserver, {})
 
-                    def timeout():                        
+                    def timeout():
                         del tasks[request]
 
                         try:
@@ -120,13 +120,13 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                         except Exception, e:
                             self.logger.warn("fail to execute callback: %s", e)
                             self.logger.debug("exc: %s", traceback.format_exc())
-                            self.logger.debug("res: %s", request)                            
+                            self.logger.debug("res: %s", request)
 
                     timer = self.wheel.create(timeout, expired)
 
                     tasks[request] = (callback, timer)
         except Exception, e:
-            self.logger.warn("fail to send query, %s", e)            
+            self.logger.warn("fail to send query, %s", e)
 
     def sendto(self, data, address):
         try:
@@ -136,9 +136,9 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 return 0
             else:
                 self.logger.warn("fail to send packet, %s", why)
-                
+
                 raise
-            
+
             return 0
 
     def recvfrom(self, bufize):
@@ -149,9 +149,9 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 return None, None
             else:
                 self.logger.warn("fail to receive packet, %s", why)
-                
+
                 raise
-            
+
     def query(self, qname, rdtype=dns.rdatatype.A, rdclass=dns.rdataclass.IN,
               expired=30, callback=None, nameservers=None, port=53):
         if isinstance(qname, (str, unicode)):
@@ -165,7 +165,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             qname = qname.concatenate(dns.name.root)
 
         if nameservers is None:
-            nameservers = self.system_nameservers
+            nameservers = self.system_nameservers()
 
         self.logger.info("query name servers %s for type %s and class %s record of domain %s in %d seconds",
                          ', '.join(nameservers),
