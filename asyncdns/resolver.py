@@ -10,6 +10,15 @@ import dns.rdataclass
 
 from pipeline import Pipeline
 
+def normalize(s):
+    for encoding in ['utf-8', 'latin1', 'cp1252', 'gbk']:
+        try:
+            return s.decode(encoding).encode('utf-8')
+        except UnicodeDecodeError:
+            pass
+
+    return s.decode('utf-8', 'ignore').encode('utf-8')
+
 class Resolver(Pipeline):
     logger = logging.getLogger("asyncdns.resolver")
 
@@ -37,7 +46,7 @@ class Resolver(Pipeline):
         elif rrset.rdtype in [dns.rdatatype.HINFO]:
             return [(rdata.cpu, rdata.os) for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.TXT]:
-            return [rdata.strings for rdata in rrset]
+            return [[normalize(s) for s in rdata.strings] for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.RP]:
             return [(rdata.mbox, rdata.txt) for rdata in rrset]
         else:
