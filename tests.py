@@ -200,9 +200,9 @@ class TestSocksProtocol(unittest.TestCase):
         self.assertEqual(8081, port)
 
         self.proto.sock.buf = "\x05\x00\x00\x01\x7f\x00\x00\x01\x1f\x90"
-        self.assertEqual(('127.0.0.1', 8080), self.proto.associate("google", 80))
+        self.assertEqual(('127.0.0.1', 8080), self.proto.associate())
 
-        self.assertEqual("\x05\x03\x00\x03\x06google\x00P", self.proto.sock.sent)
+        self.assertEqual("\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00", self.proto.sock.sent)
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

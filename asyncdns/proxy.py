@@ -101,7 +101,7 @@ class SocksProtocol(object):
 
         return True
 
-    def make_request(self, cmd, host, port):
+    def make_request(self, cmd, host='0.0.0.0', port=0):
         buf = struct.pack("3B", self.version, cmd, 0)
 
         try:
@@ -137,16 +137,16 @@ class SocksProtocol(object):
 
         return host, port
 
-    def associate(self, host, port):
+    def associate(self, host='0.0.0.0', port=0):
         self.logger.info("sending a UDP associate request to proxy %s:%d", *self.sock.getpeername())
 
         self.sock.sendall(self.make_request(self.CMD_UDP_ASSOCIATE, host, port))
 
-        host, port = self.parse_request()
+        proxy_host, proxy_port = self.parse_request()
 
-        self.logger.info("received the associated UDP proxy @ %s:%d", host, port)
+        self.logger.info("received the associated UDP proxy @ %s:%d", proxy_host, proxy_port)
 
-        return host, port
+        return proxy_host, proxy_port
 
 class SocksProxy(object):
     """
@@ -195,5 +195,6 @@ class SocksProxy(object):
         if self.connected:
             self.sock.close()
 
-    def negotiate(self):
-        self.proto.connect()
+    def open(self):
+        if self.proto.connect():
+            proxy_host, proxy_port = self.proto.associate()
