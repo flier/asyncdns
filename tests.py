@@ -133,22 +133,76 @@ class TestPipeline(unittest.TestCase):
 
         self.assert_(len(self.pipeline) < len(system_nameservers))
 
-class TestSocksProxy(unittest.TestCase):
+class TestSocksProtocol(unittest.TestCase):
+    class FakeSocks(object):
+        def __init__(self, buf=None):
+            self.buf = buf
+            self.sent = ""
+
+        def getpeername(self):
+            return ('127.0.0.1', '1234')
+
+        def recv(self, bytes):
+            data = self.buf[:bytes]
+            self.buf = self.buf[bytes:]
+
+            return data
+
+        def sendall(self, buf):
+            self.sent += buf
+
+    def setUp(self):
+        self.proto = SocksProtocol(TestSocksProtocol.FakeSocks())
+
     def testProtocolConnect(self):
-        proto = SocksProtocol(None)
+        self.assertEqual(SocksProtocol.VER_SOCKS_5, self.proto.version)
 
-        self.assertEqual(SocksProtocol.VER_SOCKS_5, proto.version)
+        self.assertEqual("\x05\x02\x00\x02", self.proto.make_connect())
+        self.assertEqual("\x05\x01\x02", self.proto.make_connect([SocksProtocol.METHOD_SIMPLE]))
+        self.assertEqual("\x05\x01\x00", self.proto.make_connect([]))
 
-        self.assertEqual("\x05\x02\x00\x02", proto.make_connect())
-        self.assertEqual("\x05\x01\x02", proto.make_connect([SocksProtocol.METHOD_SIMPLE]))
-        self.assertEqual("\x05\x01\x00", proto.make_connect([]))
+        self.proto.sock.buf = "\x05\x00"
+        self.assertEqual(SocksProtocol.METHOD_NO_AUTH, self.proto.parse_connect())
 
-        self.assertEqual(SocksProtocol.METHOD_NO_AUTH, proto.parse_connect("\x05\x00"))
-        self.assertEqual(SocksProtocol.METHOD_GSSAPI, proto.parse_connect("\x05\x01"))
-        self.assertEqual(SocksProtocol.METHOD_SIMPLE, proto.parse_connect("\x05\x02"))
+        self.proto.sock.buf = "\x05\x01"
+        self.assertEqual(SocksProtocol.METHOD_GSSAPI, self.proto.parse_connect())
 
-        self.assertRaises(InvalidSocksVersion, proto.parse_connect, "\x04\x02")
-        self.assertRaises(NoAcceptableAuthMethod, proto.parse_connect, "\x05\xff")
+        self.proto.sock.buf = "\x05\x02"
+        self.assertEqual(SocksProtocol.METHOD_SIMPLE, self.proto.parse_connect())
+
+        self.proto.sock.buf = "\x04\x02"
+        self.assertRaises(InvalidSocksVersion, self.proto.parse_connect)
+
+        self.proto.sock.buf = "\x05\xff"
+        self.assertRaises(NoAcceptableAuthMethod, self.proto.parse_connect)
+
+        self.proto.sock.buf = "\x05\x02"
+        self.assert_(self.proto.connect())
+
+        self.assertEqual("\x05\x02\x00\x02", self.proto.sock.sent)
+
+    def testProtocolRequest(self):
+        self.assertEqual("\x05\x01\x00\x01\x7f\x00\x00\x01\x1f\x90", self.proto.make_request(SocksProtocol.CMD_CONNECT, '127.0.0.1', 8080))
+        self.assertEqual("\x05\x03\x00\x03\tlocalhost\x1f\x90", self.proto.make_request(SocksProtocol.CMD_UDP_ASSOCIATE, 'localhost', 8080))
+
+        self.proto.sock.buf = "\x05\x00\x00\x01\x7f\x00\x00\x01\x1f\x91"
+
+        addr, port = self.proto.parse_request()
+
+        self.assertEqual("127.0.0.1", addr)
+        self.assertEqual(8081, port)
+
+        self.proto.sock.buf = "\x05\x00\x00\x03\tlocalhost\x1f\x91"
+
+        addr, port = self.proto.parse_request()
+
+        self.assertEqual("localhost", addr)
+        self.assertEqual(8081, port)
+
+        self.proto.sock.buf = "\x05\x00\x00\x01\x7f\x00\x00\x01\x1f\x90"
+        self.assertEqual(('127.0.0.1', 8080), self.proto.associate("google", 80))
+
+        self.assertEqual("\x05\x03\x00\x03\x06google\x00P", self.proto.sock.sent)
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,

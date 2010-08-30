@@ -34,7 +34,21 @@ class SocksProtocol(object):
     CMD_BIND = 2
     CMD_UDP_ASSOCIATE = 3
 
-    LEN_CONNECT_REPLY = 2
+    ADDR_TYPE_IPV4 = 1
+    ADDR_TYPE_DOMAIN = 3
+    ADDR_TYPE_IPV6 = 4
+
+    REPLY_MESSAGE = [
+        'succeeded',
+        'general SOCKS server failure',
+        'connection not allowed by ruleset',
+        'network unreachable',
+        'host unreachable',
+        'connection refused',
+        'TTL expired',
+        'command not supported',
+        'address type not supported',
+    ]
 
     def __init__(self, sock, version=VER_SOCKS_5):
         if version not in [self.VER_SOCKS_5]:
@@ -60,8 +74,8 @@ class SocksProtocol(object):
 
         return buf
 
-    def parse_connect(self, buf):
-        version, method = struct.unpack("2B", buf[:2])
+    def parse_connect(self):
+        version, method = struct.unpack("2B", self.recvall(2))
 
         if version != self.version:
             raise InvalidSocksVersion(version)
@@ -78,19 +92,65 @@ class SocksProtocol(object):
 
         self.sock.sendall(self.make_connect())
 
-        method = self.parse_connect(self.sock.recvall(self.LEN_CONNECT_REPLY))
+        method = self.parse_connect()
 
         self.logger.info("received the connect reply with authentication method %d", method)
 
         if self.METHOD_SIMPLE == method:
             pass
 
+        return True
+
     def make_request(self, cmd, host, port):
-        return struct.pack("4B", self.version, cmd, 0)
+        buf = struct.pack("3B", self.version, cmd, 0)
+
+        try:
+            buf += chr(self.ADDR_TYPE_IPV4) + socket.inet_aton(host)
+        except socket.error:
+            buf += chr(self.ADDR_TYPE_DOMAIN) + chr(len(host)) + host
+
+        buf += struct.pack(">H", port)
+
+        return buf
+
+    def parse_request(self):
+        version, reply_code, _, addr_type = struct.unpack("4B", self.recvall(4))
+
+        if version != self.version:
+            raise InvalidSocksVersion(version)
+
+        if reply_code == 0:
+            pass
+        elif reply_code in range(len(self.REPLY_MESSAGE)):
+            raise SocksProtocolError(REPLY_MESSAGE[reply_code])
+        else:
+            raise SocksProtocolError("unknown reply code: %d" % reply_code)
+
+        if addr_type == self.ADDR_TYPE_IPV4:
+            host = socket.inet_ntoa(self.recvall(4))
+        elif addr_type == self.ADDR_TYPE_DOMAIN:
+            host = self.recvall(ord(self.recvall(1)))
+        else:
+            raise SocksProtocolError("unsupport address type: %d" % addr_type)
+
+        port = struct.unpack(">H", self.recvall(2))[0]
+
+        return host, port
+
+    def associate(self, host, port):
+        self.logger.info("sending a UDP associate request to proxy %s:%d", *self.sock.getpeername())
+
+        self.sock.sendall(self.make_request(self.CMD_UDP_ASSOCIATE, host, port))
+
+        host, port = self.parse_request()
+
+        self.logger.info("received the associated UDP proxy @ %s:%d", host, port)
+
+        return host, port
 
 class SocksProxy(object):
     """
-    SocksProxy is a socks 5 proxy for UDP protocol
+    SocksProxy is a socks 5 proxy client for the UDP protocol
 
     RFC1928 http://www.faqs.org/rfcs/rfc1928.html
     """
