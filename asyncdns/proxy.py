@@ -148,6 +148,43 @@ class SocksProtocol(object):
 
         return proxy_host, proxy_port
 
+    def make_packet(self, host, port, data):
+        buf = "\x00\x00\x00"
+
+        try:
+            buf += chr(self.ADDR_TYPE_IPV4) + socket.inet_aton(host)
+        except socket.error:
+            buf += chr(self.ADDR_TYPE_DOMAIN) + chr(len(host)) + host
+
+        buf += struct.pack(">H", port)
+        buf += data
+
+        return buf
+
+    def parse_packet(self, buf):
+        _, fragment_num, addr_type = struct.unpack("H2B", buf[:4])
+
+        pos = 4
+
+        if addr_type == self.ADDR_TYPE_IPV4:
+            host = socket.inet_ntoa(buf[pos:pos+4])
+            pos += 4
+            
+        elif addr_type == self.ADDR_TYPE_DOMAIN:
+            len = ord(buf[pos])
+            pos += 1
+
+            host = buf[pos:pos+len]
+            pos += len
+        else:
+            raise SocksProtocolError("unsupport address type: %d" % addr_type)
+
+        port = struct.unpack(">H", buf[pos:pos+2])[0]
+
+        pos += 2
+
+        return host, port, buf[pos:]
+
 class SocksProxy(object):
     """
     SocksProxy is a socks 5 proxy client for the UDP protocol

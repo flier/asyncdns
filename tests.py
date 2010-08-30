@@ -154,7 +154,7 @@ class TestSocksProtocol(unittest.TestCase):
     def setUp(self):
         self.proto = SocksProtocol(TestSocksProtocol.FakeSocks())
 
-    def testProtocolConnect(self):
+    def testConnect(self):
         self.assertEqual(SocksProtocol.VER_SOCKS_5, self.proto.version)
 
         self.assertEqual("\x05\x02\x00\x02", self.proto.make_connect())
@@ -181,7 +181,7 @@ class TestSocksProtocol(unittest.TestCase):
 
         self.assertEqual("\x05\x02\x00\x02", self.proto.sock.sent)
 
-    def testProtocolRequest(self):
+    def testRequest(self):
         self.assertEqual("\x05\x01\x00\x01\x7f\x00\x00\x01\x1f\x90", self.proto.make_request(SocksProtocol.CMD_CONNECT, '127.0.0.1', 8080))
         self.assertEqual("\x05\x03\x00\x03\tlocalhost\x1f\x90", self.proto.make_request(SocksProtocol.CMD_UDP_ASSOCIATE, 'localhost', 8080))
 
@@ -203,6 +203,13 @@ class TestSocksProtocol(unittest.TestCase):
         self.assertEqual(('127.0.0.1', 8080), self.proto.associate())
 
         self.assertEqual("\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00", self.proto.sock.sent)
+
+    def testPacket(self):
+        self.assertEqual("\x00\x00\x00\x01\x7f\x00\x00\x01\x005test", self.proto.make_packet('127.0.0.1', 53, 'test'))
+        self.assertEqual("\x00\x00\x00\x03\tlocalhost\x005test", self.proto.make_packet('localhost', 53, 'test'))
+
+        self.assertEqual(("127.0.0.1", 53, "test"), self.proto.parse_packet("\x00\x00\x00\x01\x7f\x00\x00\x01\x005test"))
+        self.assertEqual(("localhost", 53, "test"), self.proto.parse_packet("\x00\x00\x00\x03\tlocalhost\x005test"))
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,
