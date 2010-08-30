@@ -13,6 +13,7 @@ import dns.opcode
 
 from asyncdns.timewheel import *
 from asyncdns.pipeline import *
+from asyncdns.proxy import *
 
 class TestTimeWheel(unittest.TestCase):
     def testTimer(self):
@@ -131,6 +132,23 @@ class TestPipeline(unittest.TestCase):
         self.assert_(len(response.answer) > 0)
 
         self.assert_(len(self.pipeline) < len(system_nameservers))
+
+class TestSocksProxy(unittest.TestCase):
+    def testProtocolConnect(self):
+        proto = SocksProtocol(None)
+
+        self.assertEqual(SocksProtocol.VER_SOCKS_5, proto.version)
+
+        self.assertEqual("\x05\x02\x00\x02", proto.make_connect())
+        self.assertEqual("\x05\x01\x02", proto.make_connect([SocksProtocol.METHOD_SIMPLE]))
+        self.assertEqual("\x05\x01\x00", proto.make_connect([]))
+
+        self.assertEqual(SocksProtocol.METHOD_NO_AUTH, proto.parse_connect("\x05\x00"))
+        self.assertEqual(SocksProtocol.METHOD_GSSAPI, proto.parse_connect("\x05\x01"))
+        self.assertEqual(SocksProtocol.METHOD_SIMPLE, proto.parse_connect("\x05\x02"))
+
+        self.assertRaises(InvalidSocksVersion, proto.parse_connect, "\x04\x02")
+        self.assertRaises(NoAcceptableAuthMethod, proto.parse_connect, "\x05\xff")
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,
