@@ -15,6 +15,10 @@ class InvalidSocksVersion(SocksProtocolError):
 
         self.version = version
 
+class AuthenticationError(SocksProtocolError):
+    def __init__(self, errcode):
+        SocksProtocolError.__init__(self, "Invalid username or password: %d" % errcode)
+
 class NoAcceptableAuthMethod(SocksProtocolError):
     def __init__(self):
         SocksProtocolError.__init__(self, "No acceptable authentication method")
@@ -29,6 +33,8 @@ class SocksProtocol(object):
     METHOD_GSSAPI = 1
     METHOD_SIMPLE = 2
     METHOD_NO_ACCEPTABLE = 255
+
+    AUTH_SIMPLE_VERSION = 1
 
     CMD_CONNECT = 1
     CMD_BIND = 2
@@ -50,11 +56,13 @@ class SocksProtocol(object):
         'address type not supported',
     ]
 
-    def __init__(self, sock, version=VER_SOCKS_5):
+    def __init__(self, sock, username='', passwd='', version=VER_SOCKS_5):
         if version not in [self.VER_SOCKS_5]:
             raise InvalidSocksVersion(version)
 
         self.sock = sock
+        self.username = username
+        self.passwd = passwd
         self.version = version
 
     def recvall(self, bytes):
@@ -97,9 +105,32 @@ class SocksProtocol(object):
         self.logger.info("received the connect reply with authentication method %d", method)
 
         if self.METHOD_SIMPLE == method:
-            pass
+            self.simple_auth(self.username, self.passwd)
 
         return True
+
+    def make_simple_auth(self, username, passwd):
+        return chr(self.AUTH_SIMPLE_VERSION) + \
+               chr(len(username)) + username + \
+               chr(len(passwd)) + passwd
+
+    def parse_simple_auth(self):
+        version, reply_code = struct.unpack("2B", self.recvall(2))
+
+        if version != self.AUTH_SIMPLE_VERSION:
+            raise InvalidSocksVersion(version)
+
+        if reply_code != 0:
+            raise AuthenticationError(reply_code)
+
+        return True
+
+    def simple_auth(self, username, passwd):
+        self.logger.info("sending a simple authentication request to proxy")
+
+        self.sock.sendall(self.make_simple_auth(username, passwd))
+
+        return self.parse_simple_auth()
 
     def make_request(self, cmd, host='0.0.0.0', port=0):
         buf = struct.pack("3B", self.version, cmd, 0)
@@ -169,7 +200,7 @@ class SocksProtocol(object):
         if addr_type == self.ADDR_TYPE_IPV4:
             host = socket.inet_ntoa(buf[pos:pos+4])
             pos += 4
-            
+
         elif addr_type == self.ADDR_TYPE_DOMAIN:
             len = ord(buf[pos])
             pos += 1

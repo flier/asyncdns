@@ -164,22 +164,28 @@ class TestSocksProtocol(unittest.TestCase):
         self.proto.sock.buf = "\x05\x00"
         self.assertEqual(SocksProtocol.METHOD_NO_AUTH, self.proto.parse_connect())
 
-        self.proto.sock.buf = "\x05\x01"
-        self.assertEqual(SocksProtocol.METHOD_GSSAPI, self.proto.parse_connect())
-
-        self.proto.sock.buf = "\x05\x02"
-        self.assertEqual(SocksProtocol.METHOD_SIMPLE, self.proto.parse_connect())
-
         self.proto.sock.buf = "\x04\x02"
         self.assertRaises(InvalidSocksVersion, self.proto.parse_connect)
 
         self.proto.sock.buf = "\x05\xff"
         self.assertRaises(NoAcceptableAuthMethod, self.proto.parse_connect)
 
-        self.proto.sock.buf = "\x05\x02"
+        self.proto.sock.buf = "\x05\x00"
         self.assert_(self.proto.connect())
 
         self.assertEqual("\x05\x02\x00\x02", self.proto.sock.sent)
+
+    def testAuth(self):
+        self.assertEqual("\x01\x04user\x04pass", self.proto.make_simple_auth('user', 'pass'))
+
+        self.proto.sock.buf = "\x01\x00"
+        self.assert_(self.proto.parse_simple_auth())
+
+        self.proto.sock.buf = "\x04\x02"
+        self.assertRaises(InvalidSocksVersion, self.proto.parse_simple_auth)
+
+        self.proto.sock.buf = "\x01\x01"
+        self.assertRaises(AuthenticationError, self.proto.parse_simple_auth)
 
     def testRequest(self):
         self.assertEqual("\x05\x01\x00\x01\x7f\x00\x00\x01\x1f\x90", self.proto.make_request(SocksProtocol.CMD_CONNECT, '127.0.0.1', 8080))
