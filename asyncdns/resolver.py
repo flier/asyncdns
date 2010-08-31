@@ -52,30 +52,31 @@ class Resolver(Pipeline):
         else:
             return [rdata for rdata in rrset]
 
+    def _execute_callback(self, callback, nameserver, qname, response):
+        try:
+            callback(nameserver, qname, response)
+        except Exception, e:
+            self.logger.warn("fail to execute callback for domain %s: %s", qname, e)
+            self.logger.debug("exc: %s", traceback.format_exc())
+            self.logger.debug("res: %s", response)
+
     def lookup(self, qname, rdtype, rdclass, expired=30,
                callback=None, nameservers=None, port=53):
         results = {}
         finished = None if callback else threading.Event()
 
         def onfinish(nameserver, response):
-            if not isinstance(response, Exception):
+            onerror = isinstance(response, Exception)
+
+            if not onerror:
                 for rrset in response.answer:
                     rdtypename = dns.rdatatype.to_text(rrset.rdtype)
 
                     results.setdefault(rdtypename, []).extend(Resolver._extract_value(rrset))
 
-                if callback:
-                    try:
-                        callback(qname, results)
-                    except Exception, e:
-                        self.logger.warn("fail to execute callback for domain %s: %s", qname, e)
-                        self.logger.debug("exc: %s", traceback.format_exc())
-                        self.logger.debug("res: %s", response)
+            if callback:
+                self._execute_callback(callback, nameserver, qname, response if onerror else results)
             else:
-                if callback:
-                    callback(qname, response)
-
-            if finished:
                 finished.set()
 
         self.query(qname, rdtype, rdclass, expired, onfinish, nameservers, port)

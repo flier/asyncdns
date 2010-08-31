@@ -119,7 +119,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                         del tasks[request]
 
                         try:
-                            callback(nameserver, socket.timeout())
+                            callback(nameserver, socket.timeout("dns query to %s was timeout after %d seconds" % (nameserver[0], expired)))
                         except Exception, e:
                             self.logger.warn("fail to execute callback: %s", e)
                             self.logger.debug("exc: %s", traceback.format_exc())

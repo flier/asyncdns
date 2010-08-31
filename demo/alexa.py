@@ -43,6 +43,7 @@ DEFAULT_MONGO_HOST = "localhost"
 DEFAULT_MONGO_PORT = 27017
 DEFAULT_DATABASE_NAME = "alexa"
 DEFAULT_DNS_SERVERS = asyncdns.Resolver.system_nameservers()
+DEFAULT_DNS_TIMEOUT = 30
 DEFAULT_CONCURRENCY = 20
 
 def parse_cmdline():
@@ -58,7 +59,9 @@ def parse_cmdline():
                       metavar="NAME", help="mongodb database to open (default: %s)" % DEFAULT_DATABASE_NAME)
 
     parser.add_option("--dns-host", dest="dns_hosts", action="append", default=None,
-                      metavar="HOST", help="DNS server to query (default:%s)" % ', '.join(DEFAULT_DNS_SERVERS))
+                      metavar="HOST", help="DNS server to query (default: %s)" % ', '.join(DEFAULT_DNS_SERVERS))
+    parser.add_option("-t", "--dns-timeout", dest="dns_timeout", default=DEFAULT_DNS_TIMEOUT, type="int",
+                      metavar="NUM", help="DNS query timeout in seconds (default: %d)" % DEFAULT_DNS_TIMEOUT)
 
     parser.add_option("--force-update", dest="force_update", default=False, action="store_true",
                       help="force to update the exist domains")
@@ -177,26 +180,34 @@ class Updater(object):
             self.logger.info("inserted 10K records till %sK in %f seconds",
                              pos/1000, time.clock() - start)
 
-    def run(self, resolver, nameservers):
-        while True:
-            cursor = self.db.domains.find({
-                'domain': {'$exists': True},
-                'ip': {'$exists': False},
-                'ns': {'$exists': False},
-                'alias': {'$exists': False},
-            })
+    def run(self, resolver, nameservers, timeout):
+        cursor = self.db.domains.find({
+            'domain': {'$exists': True},
+            'ip': {'$exists': False},
+            'ns': {'$exists': False},
+            'alias': {'$exists': False},
+        })
 
-            if cursor.count() == 0:
-                break
+        if nameservers is None:
+            nameservers = DEFAULT_DNS_SERVERS
 
-            for record in cursor:
-                self.lock.acquire()
+        latch = asyncdns.CountDownLatch(cursor.count()*len(nameservers))
 
-                try:
-                    resolver.lookupAllRecords(record['domain'], nameservers=nameservers,
-                                              callback=lambda domain, results: self.update(domain, record, results))
-                except Exception, e:
-                    self.logger.warn("fail to query domain: %s, %s", record['domain'], e)
+        def onfinish(nameserver, domain, results):
+            self.update(domain, record, results)
+
+            latch.countDown()
+
+        for record in cursor:
+            self.lock.acquire()
+
+            try:
+                resolver.lookupAllRecords(record['domain'], expired=timeout,
+                                          callback=onfinish, nameservers=nameservers)
+            except Exception, e:
+                self.logger.warn("fail to query domain: %s, %s", record['domain'], e)
+
+        latch.await()
 
     DNS_FIELDNAME_MAPPING = {
         'A': 'ip',
@@ -210,6 +221,7 @@ class Updater(object):
         self.lock.release()
 
         if isinstance(results, Exception):
+            self.logger.warn("fail to query domain %s, %s", domain, results)
             return
 
         self.logger.info("received result for %s", domain)
@@ -281,7 +293,7 @@ if __name__=='__main__':
         wheel = asyncdns.TimeWheel()
         resolver = asyncdns.Resolver(wheel)
 
-        updater.run(resolver, opts.dns_hosts)
+        updater.run(resolver, opts.dns_hosts, opts.dns_timeout)
     else:
         print "ERROR: Fail to connect mongodb at %s:%d" % (opts.mongo_host, opts.mongo_port)
         print
