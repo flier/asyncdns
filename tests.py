@@ -151,6 +151,9 @@ class TestSocksProtocol(unittest.TestCase):
         def sendall(self, buf):
             self.sent += buf
 
+        def close(self):
+            pass
+
     def setUp(self):
         self.proto = SocksProtocol(TestSocksProtocol.FakeSocks())
 

@@ -24,11 +24,14 @@ from timewheel import TimeWheel
 class Pipeline(asyncore.dispatcher, threading.Thread):
     logger = logging.getLogger("asyncdns.pipeline")
 
-    def __init__(self, wheel=None, start=True):
+    def __init__(self, wheel=None, proxy=None, start=True):
         asyncore.dispatcher.__init__(self)
         threading.Thread.__init__(self, name="asyncdns.pipeline")
 
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        if proxy:
+            proxy.wrap(self.sock)
 
         self.terminated = threading.Event()
         self.task_queue = Queue.Queue()

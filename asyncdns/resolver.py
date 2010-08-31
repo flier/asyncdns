@@ -22,8 +22,8 @@ def normalize(s):
 class Resolver(Pipeline):
     logger = logging.getLogger("asyncdns.resolver")
 
-    def __init__(self, wheel=None, start=True):
-        Pipeline.__init__(self, wheel, start)
+    def __init__(self, wheel=None, proxy=None, start=True):
+        Pipeline.__init__(self, wheel, proxy, start)
 
     @staticmethod
     def _extract_value(rrset):
