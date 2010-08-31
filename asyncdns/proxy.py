@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import with_statement
 
+import sys
 import logging
 import socket
 import errno
@@ -121,6 +122,7 @@ class SocksProtocol(object):
             raise InvalidSocksVersion(version)
 
         if reply_code != 0:
+            self.sock.close()
             raise AuthenticationError(reply_code)
 
         return True
@@ -153,7 +155,7 @@ class SocksProtocol(object):
         if reply_code == 0:
             pass
         elif reply_code in range(len(self.REPLY_MESSAGE)):
-            raise SocksProtocolError(REPLY_MESSAGE[reply_code])
+            raise SocksProtocolError(self.REPLY_MESSAGE[reply_code])
         else:
             raise SocksProtocolError("unknown reply code: %d" % reply_code)
 
@@ -175,7 +177,7 @@ class SocksProtocol(object):
 
         proxy_host, proxy_port = self.parse_request()
 
-        self.logger.info("received the associated UDP proxy @ %s:%d", proxy_host, proxy_port)
+        self.logger.info("associated the UDP proxy @ %s:%d", proxy_host, proxy_port)
 
         return proxy_host, proxy_port
 
@@ -218,18 +220,25 @@ class SocksProtocol(object):
 
 class SocksProxy(object):
     """
+
     SocksProxy is a socks 5 proxy client for the UDP protocol
 
-    RFC1928 http://www.faqs.org/rfcs/rfc1928.html
+
+    RFC1928 - SOCKS Protocol Version 5
+        http://www.faqs.org/rfcs/rfc1928.html
+
+    RFC1929 - Username/Password Authentication for SOCKS V5
+        http://www.faqs.org/rfcs/rfc1929.html
+
     """
     logger = logging.getLogger("asyncdns.proxy")
 
-    def __init__(self, host, port, username, passwd,
+    def __init__(self, host, port, username='', passwd='',
                  version=SocksProtocol.VER_SOCKS_5, timeout=5):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(timeout)
 
-        self.proto = SocksProtocol(self.sock, version)
+        self.proto = SocksProtocol(self.sock, username, passwd, version)
         self.host = host
         self.port = port
         self.username = username
@@ -237,7 +246,7 @@ class SocksProxy(object):
 
     def __enter__(self):
         if self.connect():
-            self.negotiate()
+            self.open()
 
         return self
 
@@ -264,5 +273,75 @@ class SocksProxy(object):
             self.sock.close()
 
     def open(self):
-        if self.proto.connect():
-            proxy_host, proxy_port = self.proto.associate()
+        return self.proto.connect()
+
+    def wrapped_sendto(self, proxy, sendto):
+        def wrapped(data, flags, addr=None):
+            if addr is None:
+                addr = flags
+                flags = 0
+
+            host, port = addr
+
+            packet = self.proto.make_packet(host, port, data)
+
+            sent = sendto(packet, flags, proxy)
+
+            return sent - (len(packet) - len(data))
+
+        return wrapped
+
+    def wrapped_recvfrom(self, proxy, recvfrom):
+        def wrapped(bufsize, flags=0):
+            data, addr = recvfrom(bufsize, flags)
+
+            host, port, data = self.proto.parse_packet(data)
+
+            return data, (host, port)
+
+        return wrapped
+
+    def wrap(self, sock):
+        sock.bind(('0.0.0.0', 0))
+
+        host, port = sock.getsockname()
+
+        addr = self.proto.associate(host, port)
+
+        sock.sendto = self.wrapped_sendto(addr, sock.sendto)
+        sock.recvfrom = self.wrapped_recvfrom(addr, sock.recvfrom)
+
+if __name__=='__main__':
+    logging.basicConfig(level=logging.DEBUG if "-v" in sys.argv else logging.WARN,
+                        format='%(asctime)s %(levelname)s %(message)s')
+
+    args = [arg for arg in sys.argv[1:] if arg[0] != '-']
+    domain = args.pop(0)
+    host = args.pop(0)
+    port = int(args.pop(0))
+    username = args.pop(0) if args else None
+    passwd = args.pop(0) if args else None
+
+    with SocksProxy(host, port, username, passwd) as proxy:
+        import dns.name
+        import dns.rdatatype
+        import dns.message
+
+        qname = dns.name.from_text(domain, None)
+        request = dns.message.make_query(qname, dns.rdatatype.ANY)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        proxy.wrap(sock)
+
+        sent = sock.sendto(request.to_wire(), ("8.8.8.8", 53))
+
+        print "INFO: sent %d bytes through proxy" % sent
+
+        packet, addr = sock.recvfrom(1024)
+
+        print "INFO: received %d bytes packet from %s" % (len(packet), addr)
+
+        response = dns.message.from_wire(packet)
+
+        print "INFO: response=", response
