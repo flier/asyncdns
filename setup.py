@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = 'asyncdns',
-    version = '0.2',
+    version = '0.3',
     packages = find_packages(exclude=['ez_setup', 'tests']),
     author = 'Flier Lu',
     author_email = 'flier.lu@gmail.com',
