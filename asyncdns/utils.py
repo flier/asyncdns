@@ -19,3 +19,19 @@ class CountDownLatch(object):
         with self.lock:
             while self.count > 0:
                 self.lock.wait()
+
+class ResultCollector(dict):
+    def __init__(self, count):
+        self.latch = CountDownLatch(count)
+
+    def onfinish(self, nameserver, qname, response):
+        if isinstance(response, Exception):
+            self.setdefault('errors', []).append((nameserver, qname, response))
+        else:
+            self.setdefault(qname, {}).setdefault(nameserver, []).append(response)
+
+        self.latch.countDown()
+
+    def await(self):
+        self.latch.await()
+

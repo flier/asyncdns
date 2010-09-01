@@ -6,4 +6,6 @@ from resolver import Resolver
 from utils import CountDownLatch
 from proxy import SocksProxy
 
-__all__ = ['TimeWheel', 'Pipeline', 'Resolver', 'CountDownLatch', 'SocksProxy']
+__all__ = ['TimeWheel', 'Pipeline', 'Resolver',
+           'CountDownLatch', 'ResultCollector',
+           'SocksProxy']
