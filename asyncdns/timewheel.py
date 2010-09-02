@@ -8,6 +8,11 @@ import logging
 import threading
 import Queue
 
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
+
 # Hashed and Hierarchical Timing Wheels: Efficient Data Structures for Implementing a Timer Facility (1996)
 #
 # http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.33.1519
@@ -30,10 +35,11 @@ class Timer(object):
                 self.slot.remove(self)
 
     def call(self):
-        try:
-            self.callback()
-        except Exception, e:
-            self.logger.warn("fail to execute timer callback, %s", e)
+        if self.callback:
+            try:
+                self.callback()
+            except Exception, e:
+                self.logger.warn("fail to execute timer callback, %s", e)
 
     @staticmethod
     def normalize(expired):
@@ -41,13 +47,13 @@ class Timer(object):
             expired = time.mktime(expired.timetuple())
         elif isinstance(expired, datetime.timedelta):
             expired = time.mktime((datetime.datetime.now() + expired).timetuple())
-    
+
         expired = int(expired)
         now = int(time.time())
-    
+
         if expired > now:
             expired -= now
-    
+
         return expired
 
 class TimeSlot(object):
@@ -67,6 +73,9 @@ class TimeSlot(object):
 
     def __contains__(self, timer):
         return timer in self.timers
+
+    def dump(self):
+        return ', '.join([str(timer.expired) for timer in self.timers])
 
     def insert(self, timer):
         timer.slot = self
@@ -88,8 +97,10 @@ class TimeSlot(object):
             timer.expired -= 1
 
             if timer.expired < 0:
-                self.timers.remove(timer)
                 fired.append(timer)
+
+        for timer in fired:
+            self.timers.remove(timer)
 
         return fired
 
@@ -128,8 +139,21 @@ class TimeWheel(threading.Thread):
     def __len__(self):
         return sum([len(slot) for slot in self.slots])
 
+    def dump(self):
+        out = StringIO()
+
+        count = 0
+
+        for slot in self.slots:
+            if len(slot) > 0:
+                print >>out, "Slot#%d %d: %s" % (count, len(slot), slot.dump())
+
+            count += 1
+
+        return out.getvalue()
+
     def create(self, callback, expired):
-        expired = Timer.normalize(expired)        
+        expired = Timer.normalize(expired)
         timer = Timer(callback, expired/len(self.slots))
 
         with self.slots[int(time.time() + expired) % len(self.slots)] as slot:
@@ -143,6 +167,7 @@ class TimeWheel(threading.Thread):
 
     def terminate(self):
         self.terminated.set()
+        self.join()
 
     def isTerminated(self):
         return self.terminated.isSet()
@@ -155,13 +180,13 @@ class TimeWheel(threading.Thread):
         while not self.isTerminated():
             self.terminated.wait(1)
 
-            if time is None or self.isTerminated():
+            if self.isTerminated():
                 break
+
+            current = int(time.time())
 
             timers = []
 
-            current = int(time.time())
-            
             for ts in range(latest, current):
                 timers.extend(self.check(ts))
 

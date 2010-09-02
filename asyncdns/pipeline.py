@@ -115,7 +115,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                 with self.pending_tasks_lock:
                     tasks = self.pending_tasks.setdefault(nameserver, {})
 
-                    def timeout():
+                    def ontimeout():
                         del tasks[request]
 
                         try:
@@ -125,7 +125,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
                             self.logger.debug("exc: %s", traceback.format_exc())
                             self.logger.debug("res: %s", request)
 
-                    timer = self.wheel.create(timeout, expired)
+                    timer = self.wheel.create(ontimeout, expired)
 
                     tasks[request] = (callback, timer)
         except Exception, e:

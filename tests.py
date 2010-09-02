@@ -14,6 +14,7 @@ import dns.opcode
 from asyncdns.timewheel import *
 from asyncdns.pipeline import *
 from asyncdns.proxy import *
+from asyncdns.utils import *
 
 class TestTimeWheel(unittest.TestCase):
     def testTimer(self):
@@ -68,6 +69,22 @@ class TestTimeWheel(unittest.TestCase):
 
         self.assertEquals([], wheel.check(expired))
         self.assertEquals([timer], wheel.check(expired))
+
+        latch = CountDownLatch(50)
+
+        def ontimeout():
+            latch.countDown()
+
+            #print "timeout", time.time(), latch.count, len(wheel)
+            #print wheel.dump()
+
+        for i in range(5):
+            for j in range(10):
+                wheel.create(ontimeout, i)
+
+        latch.await()
+
+        self.assertEquals(0, len(wheel))
 
     def testDispatcher(self):
         wheel = TimeWheel(task_pool_size=1)
