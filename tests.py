@@ -15,6 +15,7 @@ from asyncdns.timewheel import *
 from asyncdns.pipeline import *
 from asyncdns.proxy import *
 from asyncdns.utils import *
+from asyncdns.scene import *
 
 class TestTimeWheel(unittest.TestCase):
     def testTimer(self):

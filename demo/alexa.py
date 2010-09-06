@@ -34,6 +34,7 @@ try:
 except ImportError:
     from StringIO import StringIO
 
+import dns.name
 import dns.rdatatype
 
 import pymongo
@@ -111,12 +112,25 @@ class Updater(object):
             db.domains.create_index([("domain", pymongo.ASCENDING)], unique=True)
             db.domains.create_index([("alexa", pymongo.ASCENDING)])
             db.domains.create_index([("ts", pymongo.DESCENDING)])
+
+            db.domains.insert({
+                "domain": ".",
+                "ns" : [chr(ch) + '.root-servers.net' for ch in range(ord('a'), ord('m'))]
+            })
         else:
             self.logger.info("found the `domains` collection")
 
             db.domains.ensure_index([("domain", pymongo.ASCENDING)], unique=True)
             db.domains.ensure_index([("alexa", pymongo.ASCENDING)])
             db.domains.ensure_index([("ts", pymongo.DESCENDING)])
+
+            db.domains.update({"domain": "."}, {
+                "$addToSet" : {
+                    "ns" : {
+                        "$each": [chr(ch) + '.root-servers.net' for ch in range(ord('a'), ord('m'))]
+                    }
+                }
+            })
 
     def load(self, filename):
         self.logger.info("loading records from file %s", filename)
@@ -181,12 +195,20 @@ class Updater(object):
                              pos/1000, time.clock() - start)
 
     def run(self, resolver, nameservers, timeout):
+        self.queryLocalNameserver(resolver, nameservers, timeout)
+        #self.queryAuthoritativeNameserver(resolver, timeout)
+
+    def queryLocalNameserver(self, resolver, nameservers, timeout):
         cursor = self.db.domains.find({
             'domain': {'$exists': True},
-            'ip': {'$exists': False},
-            'ns': {'$exists': False},
-            'alias': {'$exists': False},
+            '$or': [
+                { 'ip': {'$exists': False} },
+                { 'ns': {'$exists': False} },
+                { 'alias': {'$exists': False} },
+            ]
         })
+
+        self.logger.info("query %d domain from the local nameservers", cursor.count())
 
         if nameservers is None:
             nameservers = DEFAULT_DNS_SERVERS
@@ -194,7 +216,9 @@ class Updater(object):
         latch = asyncdns.CountDownLatch(cursor.count()*len(nameservers))
 
         def onfinish(nameserver, domain, results):
-            self.update(domain, record, results)
+            self.lock.release()
+
+            self.update(results)
 
             latch.countDown()
 
@@ -209,6 +233,64 @@ class Updater(object):
 
         latch.await()
 
+    def queryAuthoritativeNameservers(self, resolver, timeout):
+        self.logger.info("query")
+
+        cursor = self.db.domains.find({
+            'domain': {'$exists': True},
+            'ns': {'$exists': False},
+        })
+
+        self.logger.info("query %d domain from the authoritative nameservers", cursor.count())
+
+        latch = asyncdns.CountDownLatch(cursor.count())
+
+        def onfinish():
+            self.lock.release()
+
+            latch.countDown()
+
+        for record in cursor:
+            self.lock.acquire()
+
+            try:
+                resolver.lookupScene(self.queryAuthoritativeNameserver(record['domain']),
+                                     callback=onfinish)
+            except Exception, e:
+                self.logger.warn("fail to query domain: %s, %s", record['domain'], e)
+
+        latch.await()
+
+    @asyncdns.Scene()
+    def queryAuthoritativeNameserver(self, domain):
+        qname = dns.name.from_text(domain)
+
+        domains = ['.'.join(qname[i:]) for i in range(len(qname))]
+
+        nameservers = None
+
+        while len(domains) > 1:
+            domain = domains.pop()
+            domain = '.' if domain == '' else domain.strip('.')
+
+            record = self.db.domains.find({'domain': domain}, ['ns'])
+
+            if record is None:
+                nameserver, results = yield async.scene.Query(domain, dns.rdatatype.NS,
+                                                              nameservers=nameservers)
+
+                record = {
+                    'domain': domain,
+                    'ns' : results[domain][dns.rdatatype.NS]
+                }
+
+                record['_id'] = self.db.domains.insert(record)
+
+            nameservers = record['ns']
+            nameservers = nameservers[:min(3, len(nameservers))]
+
+        yield async.scene.Finished
+
     DNS_FIELDNAME_MAPPING = {
         'A': 'ip',
         'AAAA': 'ipv6',
@@ -217,61 +299,66 @@ class Updater(object):
         'TXT': 'text',
     }
 
-    def update(self, domain, record, results):
-        self.lock.release()
-
+    def update(self, results):
         if isinstance(results, Exception):
-            self.logger.warn("fail to query domain %s, %s", domain, results)
+            self.logger.warn("fail to query domain, %s", results)
             return
 
-        self.logger.info("received result for %s", domain)
+        for domain, records in results.items():
+            self.logger.info("received result for %s", domain)
 
-        data = {}
+            if self.db.domains.find({"domain": domain}).count() == 0:
+                self.db.domains.insert({
+                    "domain": domain,
+                    "ts": datetime.utcnow()
+                })
 
-        for rdtype, values in results.items():
-            if rdtype in ['A', 'AAAA', 'NS', 'CNAME', 'TXT']:
-                data.setdefault("$addToSet", {})[self.DNS_FIELDNAME_MAPPING[rdtype]] = {
-                    "$each": values
-                }
-            elif rdtype == 'MX':
-                data.setdefault("$addToSet", {})['mail'] = {
-                    "$each": [{
-                        "exchange": exchange,
-                        "preference": preference
-                    } for exchange, preference in values]
-                }
-            elif rdtype == 'SOA':
-                for mname, rname, serial, refresh, retry, expire, minimum in values:
-                    data.setdefault("$set", {})["soa"] = {
-                        "mname": mname,
-                        "rname": rname,
-                        "serial": serial,
-                        "refresh": refresh,
-                        "retry": retry,
-                        "expire": expire,
-                        "minimum": minimum
+            data = {}
+
+            for rdtype, values in records.items():
+                if rdtype in ['A', 'AAAA', 'NS', 'CNAME', 'TXT']:
+                    data.setdefault("$addToSet", {})[self.DNS_FIELDNAME_MAPPING[rdtype]] = {
+                        "$each": values
                     }
-            elif rdtype == 'WKS':
-                data.setdefault("$addToSet", {})['service'] = {
-                    "$each": [{
-                        "address": address,
-                        "protocol": protocol,
-                        "bitmap": bitmap
-                    } for address, protocol, bitmap in values]
-                }
-            elif rdtype == 'SRV':
-                data.setdefault("$addToSet", {})['server'] = {
-                    "$each": [{
-                        "target": target,
-                        "port": port,
-                        "priority": priority,
-                        "weight": weight
-                    } for target, port, priority, weight in values]
-                }
-            else:
-                self.logger.warn("drop domain %s unknown %s type: %s", domain, rdtype, values)
+                elif rdtype == 'MX':
+                    data.setdefault("$addToSet", {})['mail'] = {
+                        "$each": [{
+                            "exchange": exchange,
+                            "preference": preference
+                        } for exchange, preference in values]
+                    }
+                elif rdtype == 'SOA':
+                    for mname, rname, serial, refresh, retry, expire, minimum in values:
+                        data.setdefault("$set", {})["soa"] = {
+                            "mname": mname,
+                            "rname": rname,
+                            "serial": serial,
+                            "refresh": refresh,
+                            "retry": retry,
+                            "expire": expire,
+                            "minimum": minimum
+                        }
+                elif rdtype == 'WKS':
+                    data.setdefault("$addToSet", {})['service'] = {
+                        "$each": [{
+                            "address": address,
+                            "protocol": protocol,
+                            "bitmap": bitmap
+                        } for address, protocol, bitmap in values]
+                    }
+                elif rdtype == 'SRV':
+                    data.setdefault("$addToSet", {})['server'] = {
+                        "$each": [{
+                            "target": target,
+                            "port": port,
+                            "priority": priority,
+                            "weight": weight
+                        } for target, port, priority, weight in values]
+                    }
+                else:
+                    self.logger.warn("drop domain %s unknown %s type: %s", domain, rdtype, values)
 
-        self.db.domains.update({"domain": domain}, data)
+            self.db.domains.update({"domain": domain}, data)
 
 if __name__=='__main__':
     opts, args = parse_cmdline()

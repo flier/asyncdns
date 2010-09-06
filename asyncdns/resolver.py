@@ -69,10 +69,13 @@ class Resolver(Pipeline):
             onerror = isinstance(response, Exception)
 
             if not onerror:
-                for rrset in response.answer:
-                    rdtypename = dns.rdatatype.to_text(rrset.rdtype)
+                for section in [response.answer, response.authority, response.additional]:
+                    for rrset in section:
+                        domain = str(rrset.name.choose_relativity(dns.name.root, True))
+                        rdtypename = dns.rdatatype.to_text(rrset.rdtype)
 
-                    results.setdefault(rdtypename, []).extend(Resolver._extract_value(rrset))
+                        results.setdefault(domain, {}).setdefault(rdtypename, []) \
+                               .extend(Resolver._extract_value(rrset))
 
             if callback:
                 self._execute_callback(callback, nameserver, qname, response if onerror else results)
