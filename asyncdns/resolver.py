@@ -36,9 +36,9 @@ class Resolver(Pipeline):
         elif rrset.rdtype in [dns.rdatatype.MX]:
             return [(str(rdata.exchange), rdata.preference) for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.NS, dns.rdatatype.CNAME, dns.rdatatype.PTR]:
-            return [self._to_relativity(rdata.target) for rdata in rrset]
+            return [Resolver._to_relativity(rdata.target) for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.SOA]:
-            return [(self._to_relativity(rdata.mname), self._to_relativity(rdata.rname),
+            return [(Resolver._to_relativity(rdata.mname), Resolver._to_relativity(rdata.rname),
                      rdata.serial, rdata.refresh,
                      rdata.retry, rdata.expire,
                      rdata.minimum) for rdata in rrset]
@@ -78,8 +78,8 @@ class Resolver(Pipeline):
                         domain = self._to_relativity(rrset.name)
                         rdtypename = dns.rdatatype.to_text(rrset.rdtype)
 
-                        results.setdefault(domain, {}).setdefault(rdtypename, []) \
-                               .extend(Resolver._extract_value(rrset))
+                        values = results.setdefault(domain, {}).setdefault(rdtypename, [])
+                        values.extend(list(filter(lambda v: v not in values, Resolver._extract_value(rrset))))
 
             if callback:
                 self._execute_callback(callback, nameserver, qname, response if onerror else results)
