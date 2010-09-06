@@ -26,15 +26,19 @@ class Resolver(Pipeline):
         Pipeline.__init__(self, wheel, proxy, start)
 
     @staticmethod
+    def _to_relativity(qname):
+        return str(qname.choose_relativity(dns.name.root, True))
+
+    @staticmethod
     def _extract_value(rrset):
         if rrset.rdtype in [dns.rdatatype.A, dns.rdatatype.AAAA]:
             return [rdata.address for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.MX]:
             return [(str(rdata.exchange), rdata.preference) for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.NS, dns.rdatatype.CNAME, dns.rdatatype.PTR]:
-            return [str(rdata.target) for rdata in rrset]
+            return [self._to_relativity(rdata.target) for rdata in rrset]
         elif rrset.rdtype in [dns.rdatatype.SOA]:
-            return [(str(rdata.mname), str(rdata.rname),
+            return [(self._to_relativity(rdata.mname), self._to_relativity(rdata.rname),
                      rdata.serial, rdata.refresh,
                      rdata.retry, rdata.expire,
                      rdata.minimum) for rdata in rrset]
@@ -71,7 +75,7 @@ class Resolver(Pipeline):
             if not onerror:
                 for section in [response.answer, response.authority, response.additional]:
                     for rrset in section:
-                        domain = str(rrset.name.choose_relativity(dns.name.root, True))
+                        domain = self._to_relativity(rrset.name)
                         rdtypename = dns.rdatatype.to_text(rrset.rdtype)
 
                         results.setdefault(domain, {}).setdefault(rdtypename, []) \
