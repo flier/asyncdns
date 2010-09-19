@@ -80,11 +80,16 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
             try:
                 response = dns.message.from_wire(packet)
             except dns.exception.FormError:
-                self.logger.warn("drop invalid DNS packet")
+                self.logger.warn("drop invalid DNS packet from %s:%d", nameserver)
 
                 return
 
             with self.pending_tasks_lock:
+                if nameserver not in self.pending_tasks:
+                    self.logger.warn("drop unexpected DNS packet from %s:%d", nameserver)
+
+                    return
+
                 tasks = self.pending_tasks[nameserver]
 
                 for request in tasks.keys():
