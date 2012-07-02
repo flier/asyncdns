@@ -31,7 +31,7 @@ class Pipeline(asyncore.dispatcher, threading.Thread):
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         if proxy:
-            proxy.wrap(self.sock)
+            proxy.wrap(self.socket)
 
         self.terminated = threading.Event()
         self.task_queue = Queue.Queue()
