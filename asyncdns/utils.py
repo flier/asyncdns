@@ -18,7 +18,7 @@ class CountDownLatch(object):
     def await(self):
         with self.lock:
             while self.count > 0:
-                self.lock.wait()
+                self.lock.wait(0.5)
 
 class ResultCollector(dict):
     def __init__(self, count):
